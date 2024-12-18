@@ -1,235 +1,208 @@
-import streamlit as st
 import pandas as pd
-from data_preprocessing import preprocess_data
-from prediction import load_model, make_prediction
+import joblib
+import numpy as np
+import streamlit as st
+from sklearn.base import BaseEstimator, TransformerMixin
 
-# Mappings for categorical columns
-marital_status_mapping = {
-    1: 'single', 2: 'married', 3: 'widower', 4: 'divorced', 5: 'facto union', 6: 'legally separated'
-}
+# Definisi class OutlierHandler
+class OutlierHandler(BaseEstimator, TransformerMixin):
+    def __init__(self, cols):
+        self.cols = cols
+        self.lower_bounds = {}
+        self.upper_bounds = {}
 
-application_mode_mapping = {
-    1: '1st phase - general contingent',
-    2: 'Ordinance No. 612/93',
-    5: '1st phase - special contingent (Azores Island)',
-    7: 'Holders of other higher courses',
-    10: 'Ordinance No. 854-B/99',
-    15: 'International student (bachelor)',
-    16: '1st phase - special contingent (Madeira Island)',
-    17: '2nd phase - general contingent',
-    18: '3rd phase - general contingent',
-    26: 'Ordinance No. 533-A/99, item b2 (Different Plan)',
-    27: 'Ordinance No. 533-A/99, item b3 (Other Institution)',
-    39: 'Over 23 years old',
-    42: 'Transfer',
-    43: 'Change of course',
-    44: 'Technological specialization diploma holders',
-    51: 'Change of institution/course',
-    53: 'Short cycle diploma holders',
-    57: 'Change of institution/course (International)'
-}
+    def fit(self, X, y=None):
+        for col in self.cols:
+            Q1 = X[col].quantile(0.25)
+            Q3 = X[col].quantile(0.75)
+            IQR = Q3 - Q1
+            self.lower_bounds[col] = Q1 - 1.5 * IQR
+            self.upper_bounds[col] = Q3 + 1.5 * IQR
+        return self
 
-course_mapping = {
-    33: 'Biofuel Production Technologies',
-    171: 'Animation and Multimedia Design',
-    8014: 'Social Service (evening attendance)',
-    9003: 'Agronomy',
-    9070: 'Communication Design',
-    9085: 'Veterinary Nursing',
-    9119: 'Informatics Engineering',
-    9130: 'Equinculture',
-    9147: 'Management',
-    9238: 'Social Service',
-    9254: 'Tourism',
-    9500: 'Nursing',
-    9556: 'Oral Hygiene',
-    9670: 'Advertising and Marketing Management',
-    9773: 'Journalism and Communication',
-    9853: 'Basic Education',
-    9991: 'Management (evening attendance)'
-}
+    def transform(self, X):
+        X = X.copy()  # Menghindari perubahan pada X asli
+        for col in self.cols:
+            lower = self.lower_bounds[col]
+            upper = self.upper_bounds[col]
+            X[col] = np.clip(X[col], lower, upper)  # Mengatasi outlier
+        return X
 
-daytime_evening_mapping = {
-    1: 'daytime', 0: 'evening'
-}
+# Muat model dan encoder saat aplikasi dimulai
+outlier_handler_pipeline = joblib.load('model/outlier_handler_pipeline.joblib')
+encoders = joblib.load('model/encoder.joblib')
 
-previous_qualification_mapping = {
-    1: 'Secondary education',
-    2: 'Higher education - bachelor\'s degree',
-    3: 'Higher education - degree',
-    4: 'Higher education - master\'s',
-    5: 'Higher education - doctorate',
-    6: 'Frequency of higher education',
-    9: '12th year of schooling - not completed',
-    10: '11th year of schooling - not completed',
-    12: 'Other - 11th year of schooling',
-    14: '10th year of schooling',
-    15: '10th year of schooling - not completed',
-    19: 'Basic education 3rd cycle (9th/10th/11th year) or equiv.',
-    38: 'Basic education 2nd cycle (6th/7th/8th year) or equiv.',
-    39: 'Technological specialization course',
-    40: 'Higher education - degree (1st cycle)',
-    42: 'Professional higher technical course',
-    43: 'Higher education - master (2nd cycle)'
-}
+def preprocess_data(form_input):
+    # Create a DataFrame directly from the input dictionary
+    data_df = pd.DataFrame(form_input, index=[0])  # Ensure it is 2D with a single row
 
-nationality_mapping = {
-    1: 'Portuguese', 2: 'German', 6: 'Spanish', 11: 'Italian', 13: 'Dutch', 14: 'English',
-    17: 'Lithuanian', 21: 'Angolan', 22: 'Cape Verdean', 24: 'Guinean', 25: 'Mozambican',
-    26: 'Santomean', 32: 'Turkish', 41: 'Brazilian', 62: 'Romanian', 100: 'Moldova (Republic of)',
-    101: 'Mexican', 103: 'Ukrainian', 105: 'Russian', 108: 'Cuban', 109: 'Colombian'
-}
+    # Kolom kategori
+    category_cols = data_df.select_dtypes(include=['category', 'object']).columns.tolist()
 
-qualification_mapping = {
-    1: 'Secondary Education - 12th Year of Schooling or Eq.',
-    2: 'Higher Education - Bachelor\'s Degree',
-    3: 'Higher Education - Degree',
-    4: 'Higher Education - Master\'s',
-    5: 'Higher Education - Doctorate',
-    6: 'Frequency of Higher Education',
-    9: '12th Year of Schooling - Not Completed',
-    10: '11th Year of Schooling - Not Completed',
-    11: '7th Year (Old)',
-    12: 'Other - 11th Year of Schooling',
-    14: '10th Year of Schooling',
-    18: 'General commerce course',
-    19: 'Basic Education 3rd Cycle (9th/10th/11th Year) or Equiv.',
-    22: 'Technical-professional course',
-    26: '7th year of schooling',
-    27: '2nd cycle of the general high school course',
-    29: '9th Year of Schooling - Not Completed',
-    30: '8th year of schooling',
-    34: 'Unknown',
-    35: 'Can\'t read or write',
-    36: 'Can read without having a 4th year of schooling',
-    37: 'Basic education 1st cycle (4th/5th year) or equiv.',
-    38: 'Basic Education 2nd Cycle (6th/7th/8th Year) or Equiv.',
-    39: 'Technological specialization course',
-    40: 'Higher education - degree (1st cycle)',
-    41: 'Specialized higher studies course',
-    42: 'Professional higher technical course',
-    43: 'Higher Education - Master (2nd cycle)',
-    44: 'Higher Education - Doctorate (3rd cycle)'
-}
+    # Lakukan encoding untuk kolom kategori
+    for col in category_cols:
+        encoder = encoders[col]  # Mengambil encoder yang sesuai dengan kolom
+        data_df[col] = encoder.transform(data_df[col])  # Lakukan transformasi
+        encoders[col] = encoder  # Simpan encoder untuk kolom tersebut
 
-occupation_mapping = {
-    0: 'Student',
-    1: 'Representatives of the Legislative Power and Executive Bodies, Directors, Directors and Executive Managers',
-    2: 'Specialists in Intellectual and Scientific Activities',
-    3: 'Intermediate Level Technicians and Professions',
-    4: 'Administrative staff',
-    5: 'Personal Services, Security and Safety Workers and Sellers',
-    6: 'Farmers and Skilled Workers in Agriculture, Fisheries and Forestry',
-    7: 'Skilled Workers in Industry, Construction and Craftsmen',
-    8: 'Installation and Machine Operators and Assembly Workers',
-    9: 'Unskilled Workers',
-    10: 'Armed Forces Professions',
-    90: 'Other Situation',
-    99: 'blank',
-    122: 'Health professionals',
-    123: 'teachers',
-    125: 'Specialists in information and communication technologies (ICT)',
-    131: 'Intermediate level science and engineering technicians and professions',
-    132: 'Technicians and professionals, of intermediate level of health',
-    134: 'Intermediate level technicians from legal, social, sports, cultural and similar services',
-    141: 'Office workers, secretaries in general and data processing operators',
-    143: 'Data, accounting, statistical, financial services and registry-related operators',
-    144: 'Other administrative support staff',
-    151: 'Personal service workers',
-    152: 'Sellers',
-    153: 'Personal care workers and the like',
-    171: 'Skilled construction workers and the like, except electricians',
-    173: 'Skilled workers in printing, precision instrument manufacturing, jewelers, artisans and the like',
-    175: 'Workers in food processing, woodworking, clothing and other industries and crafts',
-    191: 'Cleaning workers',
-    192: 'Unskilled workers in agriculture, animal production, fisheries and forestry',
-    193: 'Unskilled workers in extractive industry, construction, manufacturing and transport',
-    194: 'Meal preparation assistants'
-}
+    # Columns to process for outlier handling
+    columns_to_process = [
+        'Admission_grade', 'Age_at_enrollment',
+        'Curricular_units_1st_sem_enrolled', 'Curricular_units_1st_sem_evaluations',
+        'Curricular_units_1st_sem_approved', 'Curricular_units_1st_sem_grade',
+        'Curricular_units_2nd_sem_enrolled', 'Curricular_units_2nd_sem_evaluations',
+        'Curricular_units_2nd_sem_approved', 'Curricular_units_2nd_sem_grade'
+    ]
+    
+    # Apply outlier handler
+    data_df[columns_to_process] = outlier_handler_pipeline.transform(data_df[columns_to_process])
 
-# Title for the app
-st.title('Prediction App for Student Data')
+    # Return the processed data
+    return data_df
 
-# Define a form for user input
-with st.form(key='prediction_form'):
-    marital_status = st.selectbox('Marital Status', list(marital_status_mapping.values()))
-    application_mode = st.selectbox('Application Mode', list(application_mode_mapping.values()))
-    application_order = st.number_input('Application Order', min_value=0, max_value=9)
-    course = st.selectbox('Course', list(course_mapping.values()))
-    attendance = st.selectbox('Attendance Mode', list(daytime_evening_mapping.values()))
-    prev_qualification = st.selectbox('Previous Qualification', list(previous_qualification_mapping.values()))
-    prev_qualification_grade = st.number_input('Previous Qualification Grade', min_value=0, max_value=200)
-    nationality = st.selectbox('Nationality', list(nationality_mapping.values()))
-    mothers_qualification = st.selectbox('Mother’s Qualification', list(qualification_mapping.values()))
-    fathers_qualification = st.selectbox('Father’s Qualification', list(qualification_mapping.values()))
-    mothers_occupation = st.selectbox('Mother’s Occupation', list(occupation_mapping.values()))
-    fathers_occupation = st.selectbox('Father’s Occupation', list(occupation_mapping.values()))
-    admission_grade = st.number_input('Admission Grade', min_value=0, max_value=200)
-    displaced = st.selectbox('Displaced', ['Yes', 'No'])
-    educational_special_needs = st.selectbox('Educational Special Needs', ['Yes', 'No'])
-    debtor = st.selectbox('Debtor', ['Yes', 'No'])
-    tuition_fees_up_to_date = st.selectbox('Tuition Fees Up To Date', ['Yes', 'No'])
-    gender = st.selectbox('Gender', ['Male', 'Female', 'Other'])
-    scholarship_holder = st.selectbox('Scholarship Holder', ['Yes', 'No'])
-    age_at_enrollment = st.number_input('Age at Enrollment')
-    international = st.selectbox('International', ['Yes', 'No'])
-    first_sem_enrolled = st.number_input('First Semester Enrolled', min_value=0, max_value=26)
-    first_sem_evaluations = st.number_input('First Semester Evaluations', min_value=0, max_value=45)
-    first_sem_approved = st.number_input('First Semester Approved', min_value=0, max_value=26)
-    first_sem_grade = st.number_input('First Semester Grade', min_value=0, max_value=20)
-    second_sem_enrolled = st.number_input('Second Semester Enrolled', min_value=0, max_value=23)
-    second_sem_evaluations = st.number_input('Second Semester Evaluations', min_value=0, max_value=33)
-    second_sem_approved = st.number_input('Second Semester Approved', min_value=0, max_value=20)
-    second_sem_grade = st.number_input('Second Semester Grade', min_value=0, max_value=20)
-    unemployment_rate = st.number_input('Unemployment Rate', min_value=0.0, max_value=100.0)
-    inflation_rate = st.number_input('Inflation Rate', min_value=0.0, max_value=100.0)
-    GDP = st.number_input('GDP')
 
-    submit_button = st.form_submit_button('Submit')
+# Fungsi untuk melakukan prediksi
+def prediction(data):
+    # Memuat model prediksi yang telah dilatih
+    model = joblib.load('model/random_forest_pipeline.joblib')
+    
+    # Memproses data input menggunakan preprocessing
+    data_processed = preprocess_data(data)
+    
+    # Melakukan prediksi menggunakan model
+    prediction = model.predict(data_processed)
+    
+    # Mengembalikan hasil prediksi (0: Tidak Dropout, 1: Dropout)
+    return prediction
 
-# If the form is submitted
+# Streamlit: Judul aplikasi
+st.title("Prediksi Dropout Mahasiswa")
+
+import streamlit as st
+
+with st.form(key='input_form'):
+    # Default values
+    default_marital_status = 'single'
+    default_application_mode = 'International student (bachelor)'
+    default_application_order = 1
+    default_course = 'Tourism'
+    default_daytime_evening_attendance = 'daytime'
+    default_previous_qualification = 'Secondary education'
+    default_previous_qualification_grade = 160
+    default_nationality = 'Portuguese'
+    default_mothers_qualification = 'Secondary Education - 12th Year of Schooling or Eq.'
+    default_fathers_qualification = 'Higher Education - Degree'
+    default_mothers_occupation = 'Intermediate Level Technicians and Professions'
+    default_fathers_occupation = 'Intermediate Level Technicians and Professions'
+    default_admission_grade = 142.5  # Default as float
+    default_displaced = 'yes'
+    default_educational_special_needs = 'no'
+    default_debtor = 'no'
+    default_tuition_fees_up_to_date = 'no'
+    default_gender = 'male'
+    default_scholarship_holder = 'no'
+    default_age_at_enrollment = 19
+    default_international = 'no'
+    default_curricular_units_1st_sem_enrolled = 6
+    default_curricular_units_1st_sem_evaluations = 6
+    default_curricular_units_1st_sem_approved = 6
+    default_curricular_units_1st_sem_grade = 14
+    default_curricular_units_2nd_sem_enrolled = 6
+    default_curricular_units_2nd_sem_evaluations = 6
+    default_curricular_units_2nd_sem_approved = 6
+    default_curricular_units_2nd_sem_grade = 13.66666667
+    default_unemployment_rate = 13.9
+    default_inflation_rate = -0.3
+    default_gdp = 0.79
+
+    # Existing inputs
+    marital_status = st.selectbox('Marital Status', ['single', 'married', 'widower', 'divorced', 'facto union', 'legally separated'], index=['single', 'married', 'widower', 'divorced', 'facto union', 'legally separated'].index(default_marital_status))
+    application_mode = st.selectbox('Application Mode', ['1st phase - general contingent', 'Ordinance No. 612/93', '1st phase - special contingent (Azores Island)', 'Holders of other higher courses', 'Ordinance No. 854-B/99', 'International student (bachelor)', '1st phase - special contingent (Madeira Island)', '2nd phase - general contingent', '3rd phase - general contingent', 'Ordinance No. 533-A/99, item b2 (Different Plan)', 'Ordinance No. 533-A/99, item b3 (Other Institution)', 'Over 23 years old', 'Transfer', 'Change of course', 'Technological specialization diploma holders', 'Change of institution/course', 'Short cycle diploma holders', 'Change of institution/course (International)'], index=['1st phase - general contingent', 'Ordinance No. 612/93', '1st phase - special contingent (Azores Island)', 'Holders of other higher courses', 'Ordinance No. 854-B/99', 'International student (bachelor)', '1st phase - special contingent (Madeira Island)', '2nd phase - general contingent', '3rd phase - general contingent', 'Ordinance No. 533-A/99, item b2 (Different Plan)', 'Ordinance No. 533-A/99, item b3 (Other Institution)', 'Over 23 years old', 'Transfer', 'Change of course', 'Technological specialization diploma holders', 'Change of institution/course', 'Short cycle diploma holders', 'Change of institution/course (International)'].index(default_application_mode))
+    application_order = st.number_input('Application Order', min_value=0, max_value=9, value=default_application_order)
+    course = st.selectbox('Course', ['Biofuel Production Technologies', 'Animation and Multimedia Design', 'Social Service (evening attendance)', 'Agronomy', 'Communication Design', 'Veterinary Nursing', 'Informatics Engineering', 'Equinculture', 'Management', 'Social Service', 'Tourism', 'Nursing', 'Oral Hygiene', 'Advertising and Marketing Management', 'Journalism and Communication', 'Basic Education', 'Management (evening attendance)'], index=['Biofuel Production Technologies', 'Animation and Multimedia Design', 'Social Service (evening attendance)', 'Agronomy', 'Communication Design', 'Veterinary Nursing', 'Informatics Engineering', 'Equinculture', 'Management', 'Social Service', 'Tourism', 'Nursing', 'Oral Hygiene', 'Advertising and Marketing Management', 'Journalism and Communication', 'Basic Education', 'Management (evening attendance)'].index(default_course))
+    daytime_evening_attendance = st.selectbox('Daytime/Evening Attendance', ['daytime', 'evening'], index=['daytime', 'evening'].index(default_daytime_evening_attendance))
+    previous_qualification = st.selectbox('Previous Qualification', ['Secondary education', 'Higher education - bachelor\'s degree', 'Higher education - degree', 'Higher education - master\'s', 'Higher education - doctorate', 'Frequency of higher education', '12th year of schooling - not completed', '11th year of schooling - not completed', 'Other - 11th year of schooling', '10th year of schooling', '10th year of schooling - not completed', 'Basic education 3rd cycle (9th/10th/11th year) or equiv.', 'Basic education 2nd cycle (6th/7th/8th year) or equiv.', 'Technological specialization course', 'Higher education - degree (1st cycle)', 'Professional higher technical course', 'Higher education - master (2nd cycle)'], index=['Secondary education', 'Higher education - bachelor\'s degree', 'Higher education - degree', 'Higher education - master\'s', 'Higher education - doctorate', 'Frequency of higher education', '12th year of schooling - not completed', '11th year of schooling - not completed', 'Other - 11th year of schooling', '10th year of schooling', '10th year of schooling - not completed', 'Basic education 3rd cycle (9th/10th/11th year) or equiv.', 'Basic education 2nd cycle (6th/7th/8th year) or equiv.', 'Technological specialization course', 'Higher education - degree (1st cycle)', 'Professional higher technical course', 'Higher education - master (2nd cycle)'].index(default_previous_qualification))
+    previous_qualification_grade = st.number_input('Previous Qualification Grade', min_value=0, max_value=200, value=default_previous_qualification_grade)
+    nationality = st.selectbox('Nationality', ['Portuguese', 'German', 'Spanish', 'Italian', 'Dutch', 'English', 'Lithuanian', 'Angolan', 'Cape Verdean', 'Guinean', 'Mozambican', 'Santomean', 'Turkish', 'Brazilian', 'Romanian', 'Moldova (Republic of)', 'Mexican', 'Ukrainian', 'Russian', 'Cuban', 'Colombian'], index=['Portuguese', 'German', 'Spanish', 'Italian', 'Dutch', 'English', 'Lithuanian', 'Angolan', 'Cape Verdean', 'Guinean', 'Mozambican', 'Santomean', 'Turkish', 'Brazilian', 'Romanian', 'Moldova (Republic of)', 'Mexican', 'Ukrainian', 'Russian', 'Cuban', 'Colombian'].index(default_nationality))
+    mothers_qualification = st.selectbox('Mother\'s Qualification', ['Secondary Education - 12th Year of Schooling or Eq.', 'Higher Education - Bachelor\'s Degree', 'Higher Education - Degree', 'Higher Education - Master\'s', 'Higher Education - Doctorate', 'Frequency of Higher Education', '12th Year of Schooling - Not Completed', '11th Year of Schooling - Not Completed', '7th Year (Old)', 'Other - 11th Year of Schooling', '10th Year of Schooling', 'General commerce course', 'Basic Education 3rd Cycle (9th/10th/11th Year) or Equiv.', 'Technical-professional course', '7th year of schooling', '2nd cycle of the general high school course', '9th Year of Schooling - Not Completed', '8th year of schooling', 'Unknown', 'Can\'t read or write', 'Can read without having a 4th year of schooling', 'Basic education 1st cycle (4th/5th year) or equiv.', 'Basic Education 2nd Cycle (6th/7th/8th Year) or Equiv.', 'Technological specialization course', 'Higher education - degree (1st cycle)', 'Specialized higher studies course', 'Professional higher technical course', 'Higher Education - Master (2nd cycle)', 'Higher Education - Doctorate (3rd cycle)'], index=['Secondary Education - 12th Year of Schooling or Eq.', 'Higher Education - Bachelor\'s Degree', 'Higher Education - Degree', 'Higher Education - Master\'s', 'Higher Education - Doctorate', 'Frequency of Higher Education', '12th Year of Schooling - Not Completed', '11th Year of Schooling - Not Completed', '7th Year (Old)', 'Other - 11th Year of Schooling', '10th Year of Schooling', 'General commerce course', 'Basic Education 3rd Cycle (9th/10th/11th Year) or Equiv.', 'Technical-professional course', '7th year of schooling', '2nd cycle of the general high school course', '9th Year of Schooling - Not Completed', '8th year of schooling', 'Unknown', 'Can\'t read or write', 'Can read without having a 4th year of schooling', 'Basic education 1st cycle (4th/5th year) or equiv.', 'Basic Education 2nd Cycle (6th/7th/8th Year) or Equiv.', 'Technological specialization course', 'Higher education - degree (1st cycle)', 'Specialized higher studies course', 'Professional higher technical course', 'Higher Education - Master (2nd cycle)', 'Higher Education - Doctorate (3rd cycle)'].index(default_mothers_qualification))
+    fathers_qualification = st.selectbox('Father\'s Qualification', ['Secondary Education - 12th Year of Schooling or Eq.', 'Higher Education - Bachelor\'s Degree', 'Higher Education - Degree', 'Higher Education - Master\'s', 'Higher Education - Doctorate', 'Frequency of Higher Education', '12th Year of Schooling - Not Completed', '11th Year of Schooling - Not Completed', '7th Year (Old)', 'Other - 11th Year of Schooling', '10th Year of Schooling', 'General commerce course', 'Basic Education 3rd Cycle (9th/10th/11th Year) or Equiv.', 'Technical-professional course', '7th year of schooling', '2nd cycle of the general high school course', '9th Year of Schooling - Not Completed', '8th year of schooling', 'Unknown', 'Can\'t read or write', 'Can read without having a 4th year of schooling', 'Basic education 1st cycle (4th/5th year) or equiv.', 'Basic Education 2nd Cycle (6th/7th/8th Year) or Equiv.', 'Technological specialization course', 'Higher education - degree (1st cycle)', 'Specialized higher studies course', 'Professional higher technical course', 'Higher Education - Master (2nd cycle)', 'Higher Education - Doctorate (3rd cycle)'], index=['Secondary Education - 12th Year of Schooling or Eq.', 'Higher Education - Bachelor\'s Degree', 'Higher Education - Degree', 'Higher Education - Master\'s', 'Higher Education - Doctorate', 'Frequency of Higher Education', '12th Year of Schooling - Not Completed', '11th Year of Schooling - Not Completed', '7th Year (Old)', 'Other - 11th Year of Schooling', '10th Year of Schooling', 'General commerce course', 'Basic Education 3rd Cycle (9th/10th/11th Year) or Equiv.', 'Technical-professional course', '7th year of schooling', '2nd cycle of the general high school course', '9th Year of Schooling - Not Completed', '8th year of schooling', 'Unknown', 'Can\'t read or write', 'Can read without having a 4th year of schooling', 'Basic education 1st cycle (4th/5th year) or equiv.', 'Basic Education 2nd Cycle (6th/7th/8th Year) or Equiv.', 'Technological specialization course', 'Higher education - degree (1st cycle)', 'Specialized higher studies course', 'Professional higher technical course', 'Higher Education - Master (2nd cycle)', 'Higher Education - Doctorate (3rd cycle)'].index(default_fathers_qualification))
+
+    # New inputs for occupation, admission grade, and age
+    mothers_occupation = st.selectbox('Mother\'s Occupation', ['Student', 'Representatives of the Legislative Power and Executive Bodies, Directors, Directors and Executive Managers', 'Specialists in Intellectual and Scientific Activities', 'Intermediate Level Technicians and Professions', 'Administrative staff', 'Personal Services, Security and Safety Workers and Sellers', 'Farmers and Skilled Workers in Agriculture, Fisheries and Forestry', 'Skilled Workers in Industry, Construction and Craftsmen', 'Installation and Machine Operators and Assembly Workers', 'Unskilled Workers', 'Armed Forces Professions', 'Other Situation', 'blank', 'Health professionals', 'teachers', 'Specialists in information and communication technologies (ICT)', 'Intermediate level science and engineering technicians and professions', 'Technicians and professionals, of intermediate level of health', 'Intermediate level technicians from legal, social, sports, cultural and similar services', 'Office workers, secretaries in general and data processing operators', 'Data, accounting, statistical, financial services and registry-related operators', 'Other administrative support staff', 'Personal service workers', 'Sellers', 'Personal care workers and the like', 'Skilled construction workers and the like, except electricians', 'Skilled workers in printing, precision instrument manufacturing, jewelers, artisans and the like', 'Workers in food processing, woodworking, clothing and other industries and crafts', 'Cleaning workers', 'Unskilled workers in agriculture, animal production, fisheries and forestry', 'Unskilled workers in extractive industry, construction, manufacturing and transport', 'Meal preparation assistants'], index=['Student', 'Representatives of the Legislative Power and Executive Bodies, Directors, Directors and Executive Managers', 'Specialists in Intellectual and Scientific Activities', 'Intermediate Level Technicians and Professions', 'Administrative staff', 'Personal Services, Security and Safety Workers and Sellers', 'Farmers and Skilled Workers in Agriculture, Fisheries and Forestry', 'Skilled Workers in Industry, Construction and Craftsmen', 'Installation and Machine Operators and Assembly Workers', 'Unskilled Workers', 'Armed Forces Professions', 'Other Situation', 'blank', 'Health professionals', 'teachers', 'Specialists in information and communication technologies (ICT)', 'Intermediate level science and engineering technicians and professions', 'Technicians and professionals, of intermediate level of health', 'Intermediate level technicians from legal, social, sports, cultural and similar services', 'Office workers, secretaries in general and data processing operators', 'Data, accounting, statistical, financial services and registry-related operators', 'Other administrative support staff', 'Personal service workers', 'Sellers', 'Personal care workers and the like', 'Skilled construction workers and the like, except electricians', 'Skilled workers in printing, precision instrument manufacturing, jewelers, artisans and the like', 'Workers in food processing, woodworking, clothing and other industries and crafts', 'Cleaning workers', 'Unskilled workers in agriculture, animal production, fisheries and forestry', 'Unskilled workers in extractive industry, construction, manufacturing and transport', 'Meal preparation assistants'].index(default_mothers_occupation))
+    fathers_occupation = st.selectbox('Father\'s Occupation', ['Student', 'Representatives of the Legislative Power and Executive Bodies, Directors, Directors and Executive Managers', 'Specialists in Intellectual and Scientific Activities', 'Intermediate Level Technicians and Professions', 'Administrative staff', 'Personal Services, Security and Safety Workers and Sellers', 'Farmers and Skilled Workers in Agriculture, Fisheries and Forestry', 'Skilled Workers in Industry, Construction and Craftsmen', 'Installation and Machine Operators and Assembly Workers', 'Unskilled Workers', 'Armed Forces Professions', 'Other Situation', 'blank', 'Health professionals', 'teachers', 'Specialists in information and communication technologies (ICT)', 'Intermediate level science and engineering technicians and professions', 'Technicians and professionals, of intermediate level of health', 'Intermediate level technicians from legal, social, sports, cultural and similar services', 'Office workers, secretaries in general and data processing operators', 'Data, accounting, statistical, financial services and registry-related operators', 'Other administrative support staff', 'Personal service workers', 'Sellers', 'Personal care workers and the like', 'Skilled construction workers and the like, except electricians', 'Skilled workers in printing, precision instrument manufacturing, jewelers, artisans and the like', 'Workers in food processing, woodworking, clothing and other industries and crafts', 'Cleaning workers', 'Unskilled workers in agriculture, animal production, fisheries and forestry', 'Unskilled workers in extractive industry, construction, manufacturing and transport', 'Meal preparation assistants'], index=['Student', 'Representatives of the Legislative Power and Executive Bodies, Directors, Directors and Executive Managers', 'Specialists in Intellectual and Scientific Activities', 'Intermediate Level Technicians and Professions', 'Administrative staff', 'Personal Services, Security and Safety Workers and Sellers', 'Farmers and Skilled Workers in Agriculture, Fisheries and Forestry', 'Skilled Workers in Industry, Construction and Craftsmen', 'Installation and Machine Operators and Assembly Workers', 'Unskilled Workers', 'Armed Forces Professions', 'Other Situation', 'blank', 'Health professionals', 'teachers', 'Specialists in information and communication technologies (ICT)', 'Intermediate level science and engineering technicians and professions', 'Technicians and professionals, of intermediate level of health', 'Intermediate level technicians from legal, social, sports, cultural and similar services', 'Office workers, secretaries in general and data processing operators', 'Data, accounting, statistical, financial services and registry-related operators', 'Other administrative support staff', 'Personal service workers', 'Sellers', 'Personal care workers and the like', 'Skilled construction workers and the like, except electricians', 'Skilled workers in printing, precision instrument manufacturing, jewelers, artisans and the like', 'Workers in food processing, woodworking, clothing and other industries and crafts', 'Cleaning workers', 'Unskilled workers in agriculture, animal production, fisheries and forestry', 'Unskilled workers in extractive industry, construction, manufacturing and transport', 'Meal preparation assistants'].index(default_fathers_occupation))
+    admission_grade = st.number_input('Admission Grade', min_value=0.0, max_value=200.0, value=float(default_admission_grade))
+    age_at_enrollment = st.number_input('Age at Enrollment', min_value=15, max_value=100, value=default_age_at_enrollment)
+
+    displaced = st.selectbox('Displaced', ['yes', 'no'], index=['yes', 'no'].index(default_displaced))
+    educational_special_needs = st.selectbox('Educational Special Needs', ['yes', 'no'], index=['yes', 'no'].index(default_educational_special_needs))
+    debtor = st.selectbox('Debtor', ['yes', 'no'], index=['yes', 'no'].index(default_debtor))
+    tuition_fees_up_to_date = st.selectbox('Tuition Fees Up To Date', ['yes', 'no'], index=['yes', 'no'].index(default_tuition_fees_up_to_date))
+    gender = st.selectbox('Gender', ['male', 'female'], index=['male', 'female'].index(default_gender))
+    scholarship_holder = st.selectbox('Scholarship Holder', ['yes', 'no'], index=['yes', 'no'].index(default_scholarship_holder))
+    international = st.selectbox('International', ['yes', 'no'], index=['yes', 'no'].index(default_international))
+
+    # Semester inputs
+    curricular_units_1st_sem_enrolled = st.number_input('Curricular Units 1st Sem Enrolled', min_value=0.0, max_value=26.0, value=float(default_curricular_units_1st_sem_enrolled))
+    curricular_units_1st_sem_evaluations = st.number_input('Curricular Units 1st Sem Evaluations', min_value=0.0, max_value=45.0, value=float(default_curricular_units_1st_sem_evaluations))
+    curricular_units_1st_sem_approved = st.number_input('Curricular Units 1st Sem Approved', min_value=0.0, max_value=26.0, value=float(default_curricular_units_1st_sem_approved))
+    curricular_units_1st_sem_grade = st.number_input('Curricular Units 1st Sem Grade', min_value=0.0, max_value=20.0, value=float(default_curricular_units_1st_sem_grade))
+
+    curricular_units_2nd_sem_enrolled = st.number_input('Curricular Units 2nd Sem Enrolled', min_value=0.0, max_value=23.0, value=float(default_curricular_units_2nd_sem_enrolled))
+    curricular_units_2nd_sem_evaluations = st.number_input('Curricular Units 2nd Sem Evaluations', min_value=0.0, max_value=33.0, value=float(default_curricular_units_2nd_sem_evaluations))
+    curricular_units_2nd_sem_approved = st.number_input('Curricular Units 2nd Sem Approved', min_value=0.0, max_value=20.0, value=float(default_curricular_units_2nd_sem_approved))
+    curricular_units_2nd_sem_grade = st.number_input('Curricular Units 2nd Sem Grade', min_value=0.0, max_value=20.0, value=float(default_curricular_units_2nd_sem_grade))
+
+    # Economic factors
+    unemployment_rate = st.number_input('Unemployment Rate (%)', min_value=0.0, max_value=100.0, value=default_unemployment_rate)
+    inflation_rate = st.number_input('Inflation Rate (%)', value=float(default_inflation_rate))
+    gdp = st.number_input('GDP (Billion)', value=float(default_gdp))
+
+    # Submit button
+    submit_button = st.form_submit_button(label='Submit')
+
 if submit_button:
-    user_data = {
-        'Marital Status': marital_status_mapping[marital_status],
-        'Application Mode': application_mode_mapping[application_mode],
-        'Application Order': application_order,
-        'Course': course_mapping[course],
-        'Attendance Mode': daytime_evening_mapping[attendance],
-        'Previous Qualification': previous_qualification_mapping[prev_qualification],
-        'Previous Qualification Grade': prev_qualification_grade,
-        'Nationality': nationality_mapping[nationality],
-        'Mother’s Qualification': qualification_mapping[mothers_qualification],
-        'Father’s Qualification': qualification_mapping[fathers_qualification],
-        'Mother’s Occupation': occupation_mapping[mothers_occupation],
-        'Father’s Occupation': occupation_mapping[fathers_occupation],
-        'Admission Grade': admission_grade,
-        'Displaced': displaced,
-        'Educational Special Needs': educational_special_needs,
-        'Debtor': debtor,
-        'Tuition Fees Up To Date': tuition_fees_up_to_date,
-        'Gender': gender,
-        'Scholarship Holder': scholarship_holder,
-        'Age at Enrollment': age_at_enrollment,
-        'International': international,
-        'First Semester Enrolled': first_sem_enrolled,
-        'First Semester Evaluations': first_sem_evaluations,
-        'First Semester Approved': first_sem_approved,
-        'First Semester Grade': first_sem_grade,
-        'Second Semester Enrolled': second_sem_enrolled,
-        'Second Semester Evaluations': second_sem_evaluations,
-        'Second Semester Approved': second_sem_approved,
-        'Second Semester Grade': second_sem_grade,
-        'Unemployment Rate': unemployment_rate,
-        'Inflation Rate': inflation_rate,
-        'GDP': GDP
-    }
+    # Prepare data for prediction
+    input_data = pd.DataFrame({
+        'Marital_status': [marital_status],
+        'Application_mode': [application_mode],
+        'Application_order': [application_order],
+        'Course': [course],
+        'Daytime_evening_attendance': [daytime_evening_attendance],
+        'Previous_qualification': [previous_qualification],
+        'Previous_qualification_grade': [previous_qualification_grade],
+        'Nacionality': [nationality],
+        'Mothers_qualification': [mothers_qualification],
+        'Fathers_qualification': [fathers_qualification],
+        'Mothers_occupation': [mothers_occupation],
+        'Fathers_occupation': [fathers_occupation],
+        'Admission_grade': [admission_grade],
+        'Age_at_enrollment': [age_at_enrollment],
+        'Displaced': [displaced],
+        'Educational_special_needs': [educational_special_needs],
+        'Debtor': [debtor],
+        'Tuition_fees_up_to_date': [tuition_fees_up_to_date],
+        'Gender': [gender],
+        'Scholarship_holder': [scholarship_holder],
+        'International': [international],
+        'Curricular_units_1st_sem_enrolled': [curricular_units_1st_sem_enrolled],
+        'Curricular_units_1st_sem_evaluations': [curricular_units_1st_sem_evaluations],
+        'Curricular_units_1st_sem_approved': [curricular_units_1st_sem_approved],
+        'Curricular_units_1st_sem_grade': [curricular_units_1st_sem_grade],
+        'Curricular_units_2nd_sem_enrolled': [curricular_units_2nd_sem_enrolled],
+        'Curricular_units_2nd_sem_evaluations': [curricular_units_2nd_sem_evaluations],
+        'Curricular_units_2nd_sem_approved': [curricular_units_2nd_sem_approved],
+        'Curricular_units_2nd_sem_grade': [curricular_units_2nd_sem_grade],
+        'Unemployment_rate': [unemployment_rate],
+        'Inflation_rate': [inflation_rate],
+        'GDP': [gdp]
+    })
 
-    # Preprocess data
-    processed_data = preprocess_data(user_data)
+    # Preprocessing and prediction
+    preprocessed_data = preprocess_data(input_data)
+    result = prediction(preprocessed_data)
 
-    # Load model and make prediction
-    model = load_model()  # Make sure to define this function in your code
-    prediction = make_prediction(model, processed_data)  # Define this function in your code
-
-    # Display prediction
-    st.write(f'Prediction: {prediction}')
+    # Display result
+    if result[0] == 0:
+        st.write("Prediksi: Mahasiswa Dropout")
+    else:
+        st.write("Prediksi: Mahasiswa Graduate")
