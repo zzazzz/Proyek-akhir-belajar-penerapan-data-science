@@ -138,6 +138,35 @@ Dengan mempertimbangkan faktor-faktor ini, proyek ini dapat memberikan **insight
 
 Dengan adanya **dashboard interaktif**, pihak institut dapat lebih mudah memonitor faktor-faktor risiko dan mengambil langkah-langkah yang tepat untuk membantu mahasiswa yang membutuhkan dukungan lebih. Melalui prediksi berbasis data, Jaya Jaya Institut dapat lebih proaktif dalam merancang program yang dapat meningkatkan tingkat kelulusan mahasiswa.
 
+## Rekomendasi Action Items
+
+Berdasarkan hasil analisis dan prediksi yang dilakukan, berikut adalah beberapa rekomendasi yang dapat diambil oleh Jaya Jaya Institut untuk mengurangi angka **dropout** mahasiswa:
+
+1. **Bimbingan Akademik dan Dukungan untuk Mahasiswa dengan Nilai Rendah**:
+   - Sediakan **program remedial** bagi mahasiswa dengan **admission grade** rendah agar mereka dapat meningkatkan prestasi akademik mereka.
+   - **Bimbingan belajar tambahan** untuk mahasiswa dengan beban mata kuliah tinggi, seperti yang mengambil mata kuliah **manajemen** atau **teknik informatika**, yang memiliki tingkat **dropout** lebih tinggi.
+
+2. **Perluasan Program Beasiswa dan Dukungan Keuangan**:
+   - **Perluas program beasiswa** untuk mahasiswa yang memiliki risiko tinggi **dropout** akibat masalah keuangan. Berikan informasi yang lebih jelas tentang cara mendapatkan bantuan keuangan dan program beasiswa yang tersedia.
+   - Pastikan semua mahasiswa memiliki **status pembayaran uang kuliah** yang up-to-date, dengan **audit rutin** yang dilakukan oleh tim keuangan.
+
+3. **Layanan Konseling dan Dukungan Psikologis**:
+   - Sediakan **layanan konseling tambahan** bagi mahasiswa yang berasal dari keluarga dengan pekerjaan orang tua yang kurang mendukung secara ekonomi atau sosial, serta bagi mereka yang orang tuanya memiliki kualifikasi pendidikan yang rendah atau tidak diketahui.
+
+4. **Peningkatan Fasilitas dan Lingkungan Belajar**:
+   - **Tingkatkan fasilitas kampus**, seperti ruang belajar dan perpustakaan, untuk menciptakan lingkungan belajar yang lebih kondusif.
+   - Perbaiki **kondisi pengajaran** untuk mahasiswa pada daytime, mengingat mereka memiliki tingkat **dropout** yang lebih tinggi.
+
+5. **Monitoring dan Intervensi Dini**:
+   - Implementasikan **sistem monitoring prestasi akademik secara berkala**, dan lakukan **intervensi dini** untuk mahasiswa yang menunjukkan penurunan kinerja akademik atau yang menunjukkan gejala awal kesulitan dalam pendidikan mereka.
+
+6. **Meningkatkan Komunikasi dengan Orang Tua**:
+   - **Libatkan orang tua** dalam proses pendidikan mahasiswa dengan menyediakan saluran komunikasi yang efektif, termasuk memberikan informasi tentang dukungan yang tersedia dan bagaimana mereka dapat berkontribusi terhadap keberhasilan pendidikan anak mereka.
+
+7. **Evaluasi Latar Belakang Mahasiswa**:
+   - Lakukan evaluasi terhadap **latar belakang sosial-ekonomi dan pendidikan** mahasiswa, seperti **pekerjaan orang tua** dan **kualifikasi pendidikan** mereka, guna lebih memahami faktor-faktor yang dapat mempengaruhi kelangsungan studi mahasiswa.
+
+
 ### Tujuan
 
 Dashboard ini akan membantu pihak Jaya Jaya Institut untuk:
